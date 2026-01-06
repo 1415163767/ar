@@ -1,0 +1,7 @@
+[	
+    {"video_folder": "/blob/fangyun/datasets/MiraData/data_down/", "data_csv": "/zehui/seal/csv_metafile/metafile_mira_330k_filtered.csv", "selected_columns": [1, 2]},
+    {"video_folder": "/blob/fangyun/datasets/OpenVid/video/", "data_csv": "/zehui/seal/csv_metafile/metafile_openvid_1m_filtered.csv", "selected_columns": [0, 1]},
+    {"video_folder": "/blob/ziqin/data/", "data_csv": "/zehui/seal/csv_metafile/metafile_pexel_filtered.csv", "selected_columns": [0, 1]},
+    {"video_folder": "/zehui/Sekai/unzip/", "data_csv": "/zehui/seal/csv_metafile/metafile_sekai-real-walking_no_camera_filtered.csv", "selected_columns": [0, 2]}
+]
+
