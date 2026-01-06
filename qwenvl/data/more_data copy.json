@@ -1,0 +1,6 @@
+[
+    {"video_folder": "/mnt/yifanyang/fangyun/datasets/MiraData/data_down/", "data_csv": "/mnt/data/seal/csv_metafile/metafile_mira_330k.csv", "selected_columns": [1, 2]},
+    {"video_folder": "/mnt/yifanyang/fangyun/datasets/OpenVid/video/", "data_csv": "/mnt/data/seal/csv_metafile/metafile_openvid_1m.csv", "selected_columns": [0, 1]},
+    {"video_folder": "/mnt/yifanyang/ziqin/data/", "data_csv": "/mnt/data/seal/csv_metafile/metafile_pexel.csv", "selected_columns": [0, 1]},
+    {"video_folder": "/mnt/data/Sekai/unzip/", "data_csv": "/mnt/data/seal/csv_metafile/metafile_sekai-real-walking_no_camera.csv", "selected_columns": [0, 2]}
+]

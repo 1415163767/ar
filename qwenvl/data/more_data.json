@@ -1,0 +1,6 @@
+[	
+    {"video_folder": "/data/dyb/MiraData/data_down/", "data_csv": "/data/dyb/csv_metafile/metafile_mira_330k.csv", "selected_columns": [1, 2]},
+    {"video_folder": "/data/dyb/OpenVid/video/", "data_csv": "/data/dyb/csv_metafile/metafile_openvid_1m.csv", "selected_columns": [0, 1]},
+    {"video_folder": "/data/dyb/", "data_csv": "/data/dyb/csv_metafile/metafile_pexel.csv", "selected_columns": [0, 1]},
+    {"video_folder": "/data/dyb/Sekai/unzip/", "data_csv": "/data/dyb/csv_metafile/metafile_sekai-real-walking_no_camera.csv", "selected_columns": [0, 2]}
+]
