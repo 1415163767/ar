@@ -45,7 +45,7 @@ args="
     --tune_mm_llm True \
     --bf16 \
     --output_dir ${output_dir} \
-    --num_train_epochs 10 \
+    --num_train_epochs 1 \
     --per_device_train_batch_size ${batch_size} \
     --gradient_accumulation_steps ${grad_accum_steps} \
     --max_pixels 8388608 \
