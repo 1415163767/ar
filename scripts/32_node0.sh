@@ -25,8 +25,8 @@ datasets=0_30_s_academic_v0_1,0_30_s_youtube_v0_1,0_30_s_activitynetqa,0_30_s_ne
 # datasets=0_30_s_academic_v0_1,0_30_s_youtube_v0_1,0_30_s_activitynetqa,0_30_s_nextqa,0_30_s_perceptiontest
 
 # Output configuration
-run_name="qwen3vl_2b_multiple_ema_codebook"
-output_dir=/blob/dyb_output/icml2026/qwen3vl_2b_multiple_ema_codebook
+run_name="qwen3vl_2b_multiple_ema_codebook_pretrain"
+output_dir=/blob/dyb_output/icml2026/qwen3vl_2b_multiple_ema_codebook_pretrain
 export WANDB_PROJECT="icml_ar_ablation"
 
 # Training arguments
@@ -62,7 +62,7 @@ args="
     --weight_decay 0.01 \
     --warmup_ratio 0.03 \
     --max_grad_norm 1 \
-    --lr_scheduler_type "cosine" \
+    --lr_scheduler_type "cosine_with_min_lr" \
     --logging_steps 10 \
     --model_max_length 32768 \
     --gradient_checkpointing True \
@@ -74,8 +74,9 @@ args="
 torchrun --nnodes=4 \
          --nproc_per_node=8 \
          --node_rank=0 \
-         --master_addr=100.66.90.205 \
+         --master_addr=100.64.171.70 \
          --master_port=30000 \
+         --max_restarts=10 \
          ${entry_file} ${args}
 
 
