@@ -42,6 +42,7 @@ class TrainingArguments(transformers.TrainingArguments):
     vision_tower_lr: Optional[float] = None
     train_vq_wo_llm: bool = field(default=False)
     vq_path: Optional[str] = ""
+    lr_scheduler_kwargs: Optional[Dict[str, float]] = field(default_factory=lambda: {"min_lr": 5e-6})
 
     ## Lora config
     lora_enable: bool = field(default=False)
