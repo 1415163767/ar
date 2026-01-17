@@ -10,7 +10,7 @@ deepspeed=./scripts/zero2.json
 
 # Model configuration
 llm=Qwen/Qwen3-VL-2B-Instruct  # Using HuggingFace model ID
-vq_path=/blob/dyb_output/icml2026/single_codebook_ema/checkpoint-55399/model.safetensors
+vq_path=/blob/dyb_output/icml2026/embedding_codebook_vanilla/checkpoint-55399/model.safetensors
 
 # Training hyperparameters
 lr=2e-5
@@ -26,7 +26,7 @@ datasets=0_30_s_academic_v0_1,0_30_s_youtube_v0_1,0_30_s_activitynetqa,0_30_s_ne
 
 # Output configuration
 run_name="qwen3vl_2b_single_ema_codebook"
-output_dir=/blob/dyb_output/icml2026/qwen3vl_2b_single_ema_codebook
+output_dir=/blob/dyb_output/icml2026/qwen3vl_2b_embedding_codebook_vanilla
 export WANDB_PROJECT="icml_ar_ablation"
 
 # Training arguments
