@@ -62,7 +62,7 @@ args="
     --weight_decay 0.01 \
     --warmup_ratio 0.03 \
     --max_grad_norm 1 \
-    --lr_scheduler_type "cosine" \
+    --lr_scheduler_type "cosine_with_min_lr" \
     --logging_steps 10 \
     --model_max_length 32768 \
     --gradient_checkpointing True \
