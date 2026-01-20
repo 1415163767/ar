@@ -74,7 +74,7 @@ args="
 torchrun --nnodes=4 \
          --nproc_per_node=8 \
          --node_rank=0 \
-         --master_addr=100.64.8.230 \
+         --master_addr=100.64.141.117 \
          --master_port=30000 \
          --max_restarts=10 \
          ${entry_file} ${args}
