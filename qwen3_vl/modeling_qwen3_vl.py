@@ -1238,7 +1238,8 @@ class Qwen3VLModel(Qwen3VLPreTrainedModel):
             _, video_mask = self.get_placeholder_mask(
                 input_ids, inputs_embeds=inputs_embeds, video_features=video_embeds
             )
-            inputs_embeds = inputs_embeds.masked_scatter(video_mask, video_embeds)
+            video_mask_clone = video_mask.clone()
+            # inputs_embeds = inputs_embeds.masked_scatter(video_mask, video_embeds)
 
         visual_pos_masks = None
         deepstack_visual_embeds = None
@@ -1362,14 +1363,20 @@ class Qwen3VLModel(Qwen3VLPreTrainedModel):
         #     last_hidden_state=[outputs_0.last_hidden_state, outputs_1.last_hidden_state, outputs_2.last_hidden_state, outputs_final.last_hidden_state],
         #     past_key_values=[outputs_0.past_key_values, outputs_1.past_key_values, outputs_2.past_key_values, outputs_final.past_key_values],
         # )
-        
+
         deepstack_visual_batch_mask = torch.arange(len(deepstack_visual_embeds)+1, device=inputs_embeds.device).repeat_interleave(inputs_embeds.shape[0])
+        all_video_embeds = deepstack_video_embeds + [video_embeds] 
+        inputs_embeds = inputs_embeds.repeat(len(all_video_embeds), 1, 1)
+        for i, vid_emb in enumerate(all_video_embeds):
+            inputs_embeds[i] = inputs_embeds[i].masked_scatter(video_mask_clone, vid_emb)
+
         outputs = self.language_model(
             input_ids=None,
             position_ids=position_ids.repeat(1, len(deepstack_visual_embeds)+1, 1),
             attention_mask=attention_mask.repeat(len(deepstack_visual_embeds)+1, 1, 1),
             past_key_values=past_key_values,
-            inputs_embeds=inputs_embeds.repeat(len(deepstack_visual_embeds)+1, 1, 1),
+            # inputs_embeds=inputs_embeds.repeat(len(deepstack_visual_embeds)+1, 1, 1),
+            inputs_embeds=inputs_embeds,
             cache_position=cache_position,
             visual_pos_masks=visual_pos_masks.repeat(len(deepstack_visual_embeds)+1, 1, 1),
             deepstack_visual_embeds=deepstack_visual_embeds,  # List
