@@ -25,7 +25,7 @@ datasets=0_30_s_academic_v0_1,0_30_s_youtube_v0_1,0_30_s_activitynetqa,0_30_s_ne
 # datasets=0_30_s_academic_v0_1,0_30_s_youtube_v0_1,0_30_s_activitynetqa,0_30_s_nextqa,0_30_s_perceptiontest
 
 # Output configuration
-run_name="qwen3vl_2b_single_ema_codebook"
+run_name="qwen3vl_2b_embedding_codebook_vanilla"
 output_dir=/blob/dyb_output/icml2026/qwen3vl_2b_embedding_codebook_vanilla
 export WANDB_PROJECT="icml_ar_ablation"
 
