@@ -841,7 +841,6 @@ class Qwen3VLTextModel(Qwen3VLPreTrainedModel):
         # args for deepstack
         visual_pos_masks: Optional[torch.Tensor] = None,
         deepstack_visual_embeds: Optional[list[torch.Tensor]] = None,
-        deepstack_visual_batch_mask: Optional[torch.Tensor] = None,
         **kwargs: Unpack[FlashAttentionKwargs],
     ) -> Union[tuple, BaseModelOutputWithPast]:
         r"""
@@ -909,17 +908,10 @@ class Qwen3VLTextModel(Qwen3VLPreTrainedModel):
 
             # add visual features to the hidden states of first several layers
             if deepstack_visual_embeds is not None and layer_idx in range(len(deepstack_visual_embeds)):
-                # hidden_states = self._deepstack_process(
-                #     hidden_states,
-                #     visual_pos_masks,
-                #     deepstack_visual_embeds[layer_idx],
-                # )
-                hidden_states = self._deepstack_process_batch(
+                hidden_states = self._deepstack_process(
                     hidden_states,
                     visual_pos_masks,
                     deepstack_visual_embeds[layer_idx],
-                    deepstack_visual_batch_mask,
-                    layer_idx
                 )
 
         hidden_states = self.norm(hidden_states)
@@ -1239,7 +1231,7 @@ class Qwen3VLModel(Qwen3VLPreTrainedModel):
                 input_ids, inputs_embeds=inputs_embeds, video_features=video_embeds
             )
             video_mask_clone = video_mask.clone()
-            # inputs_embeds = inputs_embeds.masked_scatter(video_mask, video_embeds)
+            inputs_embeds = inputs_embeds.masked_scatter(video_mask, video_embeds)
 
         visual_pos_masks = None
         deepstack_visual_embeds = None
@@ -1364,23 +1356,15 @@ class Qwen3VLModel(Qwen3VLPreTrainedModel):
         #     past_key_values=[outputs_0.past_key_values, outputs_1.past_key_values, outputs_2.past_key_values, outputs_final.past_key_values],
         # )
 
-        deepstack_visual_batch_mask = torch.arange(len(deepstack_visual_embeds)+1, device=inputs_embeds.device).repeat_interleave(inputs_embeds.shape[0])
-        all_video_embeds = deepstack_video_embeds + [video_embeds] 
-        inputs_embeds = inputs_embeds.repeat(len(all_video_embeds), 1, 1)
-        for i, vid_emb in enumerate(all_video_embeds):
-            inputs_embeds[i] = inputs_embeds[i].masked_scatter(video_mask_clone, vid_emb)
-
         outputs = self.language_model(
             input_ids=None,
-            position_ids=position_ids.repeat(1, len(deepstack_visual_embeds)+1, 1),
-            attention_mask=attention_mask.repeat(len(deepstack_visual_embeds)+1, 1, 1),
+            position_ids=position_ids,
+            attention_mask=attention_mask,
             past_key_values=past_key_values,
-            # inputs_embeds=inputs_embeds.repeat(len(deepstack_visual_embeds)+1, 1, 1),
             inputs_embeds=inputs_embeds,
             cache_position=cache_position,
-            visual_pos_masks=visual_pos_masks.repeat(len(deepstack_visual_embeds)+1, 1, 1),
+            visual_pos_masks=visual_pos_masks,
             deepstack_visual_embeds=deepstack_visual_embeds,  # List
-            deepstack_visual_batch_mask=deepstack_visual_batch_mask,  # Tensor
             **kwargs,
         )
 
@@ -1515,10 +1499,10 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPreTrainedModel, GenerationMixin):
             task_type=task_type,
             **kwargs,
         )
-        hidden_states_0 = outputs.last_hidden_state[0:1]
-        hidden_states_1 = outputs.last_hidden_state[1:2]
-        hidden_states_2 = outputs.last_hidden_state[2:3]
-        hidden_states_final = outputs.last_hidden_state[3:4]
+        hidden_states_0 = outputs.last_hidden_state.clone()
+        hidden_states_1 = outputs.last_hidden_state.clone()
+        hidden_states_2 = outputs.last_hidden_state.clone()
+        hidden_states_final = outputs.last_hidden_state.clone()
 
         # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
         slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
