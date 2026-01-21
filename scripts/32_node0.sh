@@ -25,8 +25,8 @@ datasets=0_30_s_academic_v0_1,0_30_s_youtube_v0_1,0_30_s_activitynetqa,0_30_s_ne
 # datasets=0_30_s_academic_v0_1,0_30_s_youtube_v0_1,0_30_s_activitynetqa,0_30_s_nextqa,0_30_s_perceptiontest
 
 # Output configuration
-run_name="qwen3vl_2b_multiple_ema_codebook_pretrain"
-output_dir=/blob/dyb_output/icml2026/qwen3vl_2b_multiple_ema_codebook_pretrain_new
+run_name="qwen3vl_2b_multiple_ema_codebook_ablation_uni"
+output_dir=/blob/dyb_output/icml2026/qwen3vl_2b_multiple_ema_codebook_ablation_uni
 export WANDB_PROJECT="icml_ar_ablation"
 
 # Training arguments
@@ -74,7 +74,7 @@ args="
 torchrun --nnodes=4 \
          --nproc_per_node=8 \
          --node_rank=0 \
-         --master_addr=100.65.39.222 \
+         --master_addr=100.65.60.61 \
          --master_port=30000 \
          --max_restarts=10 \
          ${entry_file} ${args}
