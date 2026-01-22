@@ -300,45 +300,16 @@ class LazySupervisedDataset(Dataset):
 
         # Load Video Data
         if data_args.add_video_data:
-            data_dir = "/blob/dyb/processed_data"
-            for root, dirs, files in os.walk(data_dir):
-                dirs[:] = [d for d in dirs if d != 'videos']
-                if 'video_captions_all_long_short.json' in files:
-                    removed_count = 0
-                    too_short_count = 0
-                    json_path = os.path.join(root, 'video_captions_all_long_short.json')
-                    with open(json_path, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                    
-                    for item in data:
-                        if "caption" in item and isinstance(item["caption"], str):
-                            if len(item["caption"]) <= 10:
-                                too_short_count += 1
-                                continue
-                            cleaned, removed = clean_caption(item["caption"])
-                            item["caption"] = cleaned
-                            if removed:
-                                removed_count += 1
-
-                    list_data_dict.extend(data)
-                    print(
-                        f"[OK] {json_path} | "
-                        f"entries: {len(data)}, "
-                        f"cleaned: {removed_count}, "
-                        f"too short: {too_short_count}"
-                    )
-
-        # newly add
-        pretrain_data_path = "/blob/dyb/processed_data/koala/video_captions_vbench_related.json"
-        print(f"Loading from {pretrain_data_path} ...")
-        with open(pretrain_data_path, 'r', encoding='utf-8') as f:
-            list_data_dict.extend(json.load(f))
-        print(f"[OK] {pretrain_data_path} | entries: {len(list_data_dict)}")
-        pretrain_data_path = "/blob/dyb/processed_data/IPOW_VIDU/test_videos_dataset.json"
-        print(f"Loading from {pretrain_data_path} ...")
-        with open(pretrain_data_path, 'r', encoding='utf-8') as f:
-            list_data_dict.extend(json.load(f))
-        print(f"[OK] {pretrain_data_path} | entries: {len(list_data_dict)}")
+            pretrain_data_path = "/blob/dyb/processed_data/koala/video_captions_all.json"
+            print(f"Loading from {pretrain_data_path} ...")
+            with open(pretrain_data_path, 'r', encoding='utf-8') as f:
+                list_data_dict = json.load(f)
+            print(f"[OK] {pretrain_data_path} | entries: {len(list_data_dict)}")
+            pretrain_data_path = "/blob/dyb/processed_data/IPOW_VIDU/test_videos_dataset.json"
+            print(f"Loading from {pretrain_data_path} ...")
+            with open(pretrain_data_path, 'r', encoding='utf-8') as f:
+                list_data_dict.extend(json.load(f))
+            print(f"[OK] {pretrain_data_path} | entries: {len(list_data_dict)}")
         
         # Load Image Data
         if data_args.add_image_data:
