@@ -1212,6 +1212,7 @@ class Qwen3VLModel(Qwen3VLPreTrainedModel):
             video_position_ids = video_position_ids - video_position_ids.min(dim=-1, keepdim=True).values
             video_token_pos_emb = self.latent_pos_embed(video_position_ids)
             latent = latent + timestep_embeds + video_token_pos_emb
+            latent = latent.to(inputs_embeds.dtype)
             inputs_embeds = inputs_embeds.masked_scatter(video_mask, latent)
 
         visual_pos_masks = None
