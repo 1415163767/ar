@@ -37,6 +37,7 @@ from transformers import (
     Qwen3VLMoeForConditionalGeneration
 )
 from qwen3_vl import Qwen3VLForConditionalGeneration
+from qwen3_vl.modeling_utils import VideoPositionEmbedding, TimestepEmbedder
 from qwenvl.data.data_processor import make_supervised_data_module
 from qwenvl.train.argument import (
     ModelArguments,
@@ -108,13 +109,6 @@ def set_model(model_args, model):
             p.requires_grad = False
         model.lm_head.requires_grad = False
         model.gen_head.requires_grad = False
-    
-    if model_args.tune_vqvae:
-        for n, p in model.visual.vq.named_parameters():
-            p.requires_grad = True
-    else:
-        for n, p in model.visual.vq.named_parameters():
-            p.requires_grad = False
 
 
 def new_visual_forward(self, pixel_values, pixel_values_videos, image_grid_thw, video_grid_thw, **kwargs):
@@ -192,10 +186,7 @@ def train(attn_implementation="flash_attention_2"):
                 attn_implementation=attn_implementation,
                 dtype=(torch.bfloat16 if training_args.bf16 else None),
             )
-            if training_args.vq_path != "":
-                from safetensors.torch import load_file
-                visual = load_file(training_args.vq_path)
-                model.visual.load_state_dict(visual, strict=False)
+            model.model.latent_pos_embed._init_weights(max_t=61, max_h=16, max_w=16)
             data_args.model_type = "qwen3vl"
         elif "qwen2.5" in model_args.model_name_or_path.lower():
             model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
