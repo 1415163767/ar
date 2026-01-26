@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Optional, Union
 
 import copy
+import math
 import wandb
 import torch
 import torch.nn as nn
@@ -45,6 +46,8 @@ from transformers.utils.deprecation import deprecate_kwarg
 from transformers.utils.generic import check_model_inputs
 from qwen3_vl.configuration_qwen3_vl import Qwen3VLConfig, Qwen3VLTextConfig, Qwen3VLVisionConfig
 from vq import VQ
+from torch.nn.functional import scaled_dot_product_attention
+from torch.nn.attention import SDPBackend, sdpa_kernel
 
 
 class Qwen3VLVisionMLP(nn.Module):
@@ -441,22 +444,32 @@ class Qwen3VLTextAttention(nn.Module):
             cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
             key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx, cache_kwargs)
 
-        attention_interface: Callable = eager_attention_forward
-        if self.config._attn_implementation != "eager":
-            attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+        with sdpa_kernel(backends=[SDPBackend.EFFICIENT_ATTENTION]):
+            attn_output = scaled_dot_product_attention(
+                query_states,
+                key_states.repeat(1, self.num_key_value_groups, 1, 1), 
+                value_states.repeat(1, self.num_key_value_groups, 1, 1), 
+                attention_mask.to(torch.bfloat16).unsqueeze(0),
+            )
+            attn_output = attn_output.transpose(1, 2)
+            attn_weights = None
 
-        attn_output, attn_weights = attention_interface(
-            self,
-            query_states,
-            key_states,
-            value_states,
-            attention_mask,
-            dropout=0.0 if not self.training else self.attention_dropout,
-            scaling=self.scaling,
-            **kwargs,
-        )
+        # attention_interface: Callable = eager_attention_forward
+        # if self.config._attn_implementation != "eager":
+        #     attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
-        attn_output = attn_output.reshape(*input_shape, -1).contiguous()
+        # attn_output, attn_weights = attention_interface(
+        #     self,
+        #     query_states,
+        #     key_states,
+        #     value_states,
+        #     attention_mask,
+        #     dropout=0.0 if not self.training else self.attention_dropout,
+        #     scaling=self.scaling,
+        #     **kwargs,
+        # ) # torch.Size([1, 4706, 16, 128])
+
+        attn_output = attn_output.reshape(*input_shape, -1).contiguous()    # torch.Size([1, 4706, 2048])
         attn_output = self.o_proj(attn_output)
         return attn_output, attn_weights
 
@@ -611,27 +624,6 @@ class Qwen3VLVisionModel(Qwen3VLPreTrainedModel):
             use_transformer=False,
             config=copy.deepcopy(config),  # use the same config as the model
         )
-        # self.vq_0 = VQ(
-        #     z_channels=4096,    # 2048
-        #     codebook_size=16384,  # codebook size: 16384
-        #     codebook_dim=4096,  # 2048
-        #     use_transformer=False,
-        #     config=copy.deepcopy(config),  # use the same config as the model
-        # )
-        # self.vq_1 = VQ(
-        #     z_channels=4096,    # 2048
-        #     codebook_size=16384,  # codebook size: 16384
-        #     codebook_dim=4096,  # 2048
-        #     use_transformer=False,
-        #     config=copy.deepcopy(config),  # use the same config as the model
-        # )
-        # self.vq_2 = VQ(
-        #     z_channels=4096,    # 2048
-        #     codebook_size=16384,  # codebook size: 16384
-        #     codebook_dim=4096,  # 2048
-        #     use_transformer=False,
-        #     config=copy.deepcopy(config),  # use the same config as the model
-        # )
         self.gradient_checkpointing = False
 
     def rot_pos_emb(self, grid_thw: torch.Tensor) -> torch.Tensor:
@@ -842,6 +834,7 @@ class Qwen3VLTextModel(Qwen3VLPreTrainedModel):
         # args for deepstack
         visual_pos_masks: Optional[torch.Tensor] = None,
         deepstack_visual_embeds: Optional[list[torch.Tensor]] = None,
+        video_start: Optional[torch.Tensor] = None,
         **kwargs: Unpack[FlashAttentionKwargs],
     ) -> Union[tuple, BaseModelOutputWithPast]:
         r"""
@@ -893,6 +886,14 @@ class Qwen3VLTextModel(Qwen3VLPreTrainedModel):
 
         # create position embeddings to be shared across the decoder layers
         position_embeddings = self.rotary_emb(hidden_states, position_ids)
+
+        if attention_mask is None:
+            L = hidden_states.shape[1]
+            attention_mask = torch.full((L, L), float("-inf"), device=hidden_states.device)
+            text_len = video_start
+            causal_text = torch.tril(torch.zeros(text_len, text_len, device=hidden_states.device))
+            attention_mask[:text_len, :text_len] = causal_text
+            attention_mask[video_start:L-2, :] = 0.0
 
         # decoder layers
         for layer_idx, decoder_layer in enumerate(self.layers):
@@ -1200,7 +1201,17 @@ class Qwen3VLModel(Qwen3VLPreTrainedModel):
             _, video_mask = self.get_placeholder_mask(
                 input_ids, inputs_embeds=inputs_embeds, video_features=video_embeds
             )
+
+            video_start = (input_ids[0] == 151652).nonzero(as_tuple=True)[0].item()
+            timesteps = torch.rand(1, device=code_idx.device)
+            mask_prob = torch.cos(timesteps * math.pi * 0.5).clip(0.0)
+            num_token_masked = (video_embeds.shape[0] * mask_prob).round().clamp(min=1)
+            batch_randperm = torch.rand(1, video_embeds.shape[0], device=code_idx.device).argsort(dim=-1)
+            mask = batch_randperm < num_token_masked.unsqueeze(-1)
+            mask_feature = self.get_input_embeddings()(torch.tensor([151936], device=code_idx.device))
+            video_embeds[mask.squeeze(0)] = mask_feature
             inputs_embeds = inputs_embeds.masked_scatter(video_mask, video_embeds)
+            code_idx = torch.where(mask, code_idx, -100)
 
         visual_pos_masks = None
         deepstack_visual_embeds = None
@@ -1281,6 +1292,7 @@ class Qwen3VLModel(Qwen3VLPreTrainedModel):
             cache_position=cache_position,
             visual_pos_masks=None,
             deepstack_visual_embeds=None,
+            video_start=video_start,
             **kwargs,
         )
 
@@ -1331,13 +1343,9 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPreTrainedModel, GenerationMixin):
     def __init__(self, config):
         super().__init__(config)
         self.model = Qwen3VLModel(config)
-        self.vision_vocab_size = self.model.visual.vq.quantize.codebook.shape[0] + 1
+        self.vision_vocab_size = self.model.visual.vq.quantize.codebook.shape[0] + 1 + 1
         self.lm_head = nn.Linear(config.text_config.hidden_size, config.text_config.vocab_size, bias=False)
         self.gen_head = nn.Linear(config.text_config.hidden_size, self.vision_vocab_size, bias=False)
-        # self.gen_head_0 = nn.Linear(config.text_config.hidden_size, self.vision_vocab_size, bias=False)
-        # self.gen_head_1 = nn.Linear(config.text_config.hidden_size, self.vision_vocab_size, bias=False)
-        # self.gen_head_2 = nn.Linear(config.text_config.hidden_size, self.vision_vocab_size, bias=False)
-        # self.gen_head_final = nn.Linear(config.text_config.hidden_size, self.vision_vocab_size, bias=False)
 
         self.post_init()
         self.forward_step = 0
@@ -1433,15 +1441,20 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPreTrainedModel, GenerationMixin):
             video_start_pos = [list(label_c).index(self.config.vision_start_token_id) for label_c in labels]
             video_end_pos = [len(label_c) - 1 - list(label_c)[::-1].index(self.config.vision_end_token_id) for label_c in labels]
             bs = hidden_states.shape[0]
-            chunk_size = outputs.code_idx.shape[0] // bs
+            chunk_size = outputs.code_idx.shape[1] // bs
             codes = outputs.code_idx.view(bs, chunk_size)
             for i, label_c in enumerate(labels):
-                label_c[:video_start_pos[i]+1] = -100
+                label_c[:video_start_pos[i]] = -100
+                label_c[video_start_pos[i]] = 16384
                 label_c[video_start_pos[i]+1:video_start_pos[i]+len(codes[i])+1] = codes[i].flatten()
-                label_c[video_end_pos[i]] = 16384
+                label_c[video_end_pos[i]] = 16385
                 label_c[video_end_pos[i]+1:] = -100
 
-            loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.vision_vocab_size)
+            # loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.vision_vocab_size)
+            loss = F.cross_entropy(
+                logits[:, video_start_pos[0]:].contiguous().view(-1, 16386),
+                labels[:, video_start_pos[0]:].contiguous().view(-1), ignore_index=-100,
+            )
 
         self.forward_step += 1
         if self.forward_step % 10 == 0:
@@ -1647,4 +1660,3 @@ __all__ = [
     "Qwen3VLPreTrainedModel",
     "Qwen3VLTextModel",
 ]
-
