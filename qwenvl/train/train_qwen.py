@@ -192,6 +192,10 @@ def train(attn_implementation="flash_attention_2"):
                 attn_implementation=attn_implementation,
                 dtype=(torch.bfloat16 if training_args.bf16 else None),
             )
+            try:
+                model.resize_token_embeddings(151936 + 1)   # <mask>
+            except:
+                model.resize_token_embeddings(151936 + 1, mean_resizing=False)
             if training_args.vq_path != "":
                 from safetensors.torch import load_file
                 visual = load_file(training_args.vq_path)
