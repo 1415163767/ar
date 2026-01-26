@@ -883,7 +883,7 @@ class Qwen3VLTextModel(Qwen3VLPreTrainedModel):
             text_len = video_start
             causal_text = torch.tril(torch.zeros(text_len, text_len, device=hidden_states.device))
             attention_mask[:text_len, :text_len] = causal_text
-            attention_mask[video_start:, :] = 0.0
+            attention_mask[video_start:L-2, :] = 0.0
 
         # decoder layers
         for layer_idx, decoder_layer in enumerate(self.layers):
