@@ -923,7 +923,8 @@ class Qwen3VLTextModel(Qwen3VLPreTrainedModel):
             if layer_idx >= len(self.layers) - num_layers_to_stack:
                 all_hidden_states.append(hidden_states)
         
-        all_hidden_states = [self.norm_pre_0(all_hidden_states[0]), self.norm_pre_0(all_hidden_states[1]), self.norm_pre_0(all_hidden_states[2])]
+        all_hidden_states = [self.norm_pre_0(all_hidden_states[0]), self.norm_pre_1(all_hidden_states[1]), self.norm_pre_2(all_hidden_states[2])]
+        all_hidden_states = all_hidden_states[::-1]
         hidden_states = self.norm(hidden_states)
         all_hidden_states.append(hidden_states)
         stacked_hidden_states = torch.cat(all_hidden_states, dim=0)
