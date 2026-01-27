@@ -202,6 +202,10 @@ def train(attn_implementation="flash_attention_2"):
                 from safetensors.torch import load_file
                 visual = load_file(training_args.vq_path)
                 model.visual.load_state_dict(visual, strict=False)
+                norm_weight = model.language_model.norm.state_dict()
+                model.language_model.norm_pre_0.load_state_dict(norm_weight)
+                model.language_model.norm_pre_1.load_state_dict(norm_weight)
+                model.language_model.norm_pre_2.load_state_dict(norm_weight)
             data_args.model_type = "qwen3vl"
         elif "qwen2.5" in model_args.model_name_or_path.lower():
             model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
