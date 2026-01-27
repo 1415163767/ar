@@ -1452,8 +1452,8 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPreTrainedModel, GenerationMixin):
 
             # loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.vision_vocab_size)
             loss = F.cross_entropy(
-                logits[:, video_start_pos[0]:].contiguous().view(-1, 16384),
-                labels[:, video_start_pos[0]:].contiguous().view(-1), ignore_index=-100,
+                logits[:, video_start_pos[0]+1:video_end_pos[0]].contiguous().view(-1, 16384),
+                labels[:, video_start_pos[0]+1:video_end_pos[0]].contiguous().view(-1), ignore_index=-100,
             )
 
         self.forward_step += 1
