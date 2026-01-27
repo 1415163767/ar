@@ -821,6 +821,9 @@ class Qwen3VLTextModel(Qwen3VLPreTrainedModel):
             [Qwen3VLTextDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
         self.norm = Qwen3VLTextRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.norm_pre_0 = Qwen3VLTextRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.norm_pre_1 = Qwen3VLTextRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.norm_pre_2 = Qwen3VLTextRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.rotary_emb = Qwen3VLTextRotaryEmbedding(config=config)
         self.gradient_checkpointing = False
 
@@ -893,6 +896,9 @@ class Qwen3VLTextModel(Qwen3VLPreTrainedModel):
         # create position embeddings to be shared across the decoder layers
         position_embeddings = self.rotary_emb(hidden_states, position_ids)
 
+        all_hidden_states = []
+        num_layers_to_stack = 3
+
         # decoder layers
         for layer_idx, decoder_layer in enumerate(self.layers):
             layer_outputs = decoder_layer(
@@ -913,11 +919,17 @@ class Qwen3VLTextModel(Qwen3VLPreTrainedModel):
                     visual_pos_masks,
                     deepstack_visual_embeds[layer_idx],
                 )
-
+            
+            if layer_idx >= len(self.layers) - num_layers_to_stack:
+                all_hidden_states.append(hidden_states)
+        
+        all_hidden_states = [self.norm_pre_0(all_hidden_states[0]), self.norm_pre_0(all_hidden_states[1]), self.norm_pre_0(all_hidden_states[2])]
         hidden_states = self.norm(hidden_states)
+        all_hidden_states.append(hidden_states)
+        stacked_hidden_states = torch.cat(all_hidden_states, dim=0)
 
         return BaseModelOutputWithPast(
-            last_hidden_state=hidden_states,
+            last_hidden_state=stacked_hidden_states,
             past_key_values=past_key_values,
         )
 
@@ -1200,7 +1212,7 @@ class Qwen3VLModel(Qwen3VLPreTrainedModel):
         cache_position: Optional[torch.LongTensor] = None,
         task_type: Optional[str] = None,
         **kwargs: Unpack[TransformersKwargs],
-    ) -> Union[tuple, Qwen3VLModelOutputWithPast]:
+    ) -> Union[tuple, ]:
         r"""
         image_grid_thw (`torch.LongTensor` of shape `(num_images, 3)`, *optional*):
             The temporal, height and width of feature shape of each image in LLM.
@@ -1499,10 +1511,10 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPreTrainedModel, GenerationMixin):
             task_type=task_type,
             **kwargs,
         )
-        hidden_states_0 = outputs.last_hidden_state.clone()
-        hidden_states_1 = outputs.last_hidden_state.clone()
-        hidden_states_2 = outputs.last_hidden_state.clone()
-        hidden_states_final = outputs.last_hidden_state.clone()
+        hidden_states_0 = outputs.last_hidden_state[0:1]
+        hidden_states_1 = outputs.last_hidden_state[1:2]
+        hidden_states_2 = outputs.last_hidden_state[2:3]
+        hidden_states_final = outputs.last_hidden_state[3:4]
 
         # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
         slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
