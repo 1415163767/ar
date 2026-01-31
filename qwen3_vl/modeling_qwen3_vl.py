@@ -1554,7 +1554,7 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPreTrainedModel, GenerationMixin):
             loss_2 = self.loss_function(logits=logits_2, labels=labels_2, vocab_size=self.vision_vocab_size)
             loss_final = self.loss_function(logits=logits_final, labels=labels_final, vocab_size=self.vision_vocab_size)
 
-        loss_total = loss_0 + loss_1 + loss_2 + loss_final
+        loss_total = (loss_0 + loss_1 + loss_2) * 0.5 / 3 + loss_final * 0.5
 
         self.forward_step += 1
         if self.forward_step % 10 == 0:
