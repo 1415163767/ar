@@ -1220,8 +1220,11 @@ class Qwen3VLModel(Qwen3VLPreTrainedModel):
                 input_ids, inputs_embeds=inputs_embeds, video_features=video_embeds
             )
 
-            num_frames = 31
             tokens_per_frame = 144
+            num_frames = video_embeds.shape[0] // tokens_per_frame
+            if video_embeds.shape[0] != 4464:
+                print(f"[Warning] video_embeds shape {video_embeds.shape}, inferred frames {num_frames}, pixel_values_video shape {pixel_values_videos.shape}, video_grid_thw: {video_grid_thw}")
+            
             video_start = (input_ids[0] == 151652).nonzero(as_tuple=True)[0].item()
             timesteps = torch.rand(1, device=code_idx.device)
             mask_prob = torch.cos(timesteps * math.pi * 0.5).clip(0.0)
