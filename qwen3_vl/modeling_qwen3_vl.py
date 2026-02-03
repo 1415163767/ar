@@ -1233,6 +1233,8 @@ class Qwen3VLModel(Qwen3VLPreTrainedModel):
             video_embeds[mask] = mask_feature
             inputs_embeds = inputs_embeds.masked_scatter(video_mask, video_embeds)
             code_idx = torch.where(mask, code_idx, -100)
+            # NOTE: current training assumes bs = 1
+            code_idx = code_idx.unsqueeze(0)
 
         visual_pos_masks = None
         deepstack_visual_embeds = None
