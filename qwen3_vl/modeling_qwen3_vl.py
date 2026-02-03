@@ -1195,6 +1195,24 @@ class Qwen3VLModel(Qwen3VLPreTrainedModel):
             )
             inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_embeds)
 
+        # if pixel_values_videos is not None:
+        #     video_embeds, deepstack_video_embeds, code_idx, vq_loss = self.get_video_features(pixel_values_videos, video_grid_thw, task_type)
+        #     video_embeds = torch.cat(video_embeds, dim=0).to(inputs_embeds.device, inputs_embeds.dtype)
+        #     _, video_mask = self.get_placeholder_mask(
+        #         input_ids, inputs_embeds=inputs_embeds, video_features=video_embeds
+        #     )
+
+        #     video_start = (input_ids[0] == 151652).nonzero(as_tuple=True)[0].item()
+        #     timesteps = torch.rand(1, device=code_idx.device)
+        #     mask_prob = torch.cos(timesteps * math.pi * 0.5).clip(0.0)
+        #     num_token_masked = (video_embeds.shape[0] * mask_prob).round().clamp(min=1)
+        #     batch_randperm = torch.rand(1, video_embeds.shape[0], device=code_idx.device).argsort(dim=-1)
+        #     mask = batch_randperm < num_token_masked.unsqueeze(-1)
+        #     mask_feature = self.get_input_embeddings()(torch.tensor([151936], device=code_idx.device))
+        #     video_embeds[mask.squeeze(0)] = mask_feature
+        #     inputs_embeds = inputs_embeds.masked_scatter(video_mask, video_embeds)
+        #     code_idx = torch.where(mask, code_idx, -100)
+
         if pixel_values_videos is not None:
             video_embeds, deepstack_video_embeds, code_idx, vq_loss = self.get_video_features(pixel_values_videos, video_grid_thw, task_type)
             video_embeds = torch.cat(video_embeds, dim=0).to(inputs_embeds.device, inputs_embeds.dtype)
@@ -1202,14 +1220,17 @@ class Qwen3VLModel(Qwen3VLPreTrainedModel):
                 input_ids, inputs_embeds=inputs_embeds, video_features=video_embeds
             )
 
+            num_frames = 31
+            tokens_per_frame = 144
             video_start = (input_ids[0] == 151652).nonzero(as_tuple=True)[0].item()
             timesteps = torch.rand(1, device=code_idx.device)
             mask_prob = torch.cos(timesteps * math.pi * 0.5).clip(0.0)
-            num_token_masked = (video_embeds.shape[0] * mask_prob).round().clamp(min=1)
-            batch_randperm = torch.rand(1, video_embeds.shape[0], device=code_idx.device).argsort(dim=-1)
-            mask = batch_randperm < num_token_masked.unsqueeze(-1)
+            num_spatial_masked = (tokens_per_frame * mask_prob).round().clamp(min=1)
+            randperm = torch.rand(tokens_per_frame, device=code_idx.device).argsort()
+            spatial_mask = randperm < num_spatial_masked
+            mask = spatial_mask.unsqueeze(0).expand(num_frames, tokens_per_frame).reshape(-1)
             mask_feature = self.get_input_embeddings()(torch.tensor([151936], device=code_idx.device))
-            video_embeds[mask.squeeze(0)] = mask_feature
+            video_embeds[mask] = mask_feature
             inputs_embeds = inputs_embeds.masked_scatter(video_mask, video_embeds)
             code_idx = torch.where(mask, code_idx, -100)
 
