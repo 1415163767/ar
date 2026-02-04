@@ -1199,7 +1199,9 @@ class Qwen3VLModel(Qwen3VLPreTrainedModel):
                 input_ids, inputs_embeds=inputs_embeds, video_features=video_embeds
             )
             # inputs_embeds = inputs_embeds.masked_scatter(video_mask, video_embeds)
-            clean = video_embeds
+            video_embeds_mean = video_embeds.mean(dim=-1, keepdim=True)
+            video_embeds_std = video_embeds.std(dim=-1, keepdim=True).clamp(min=1e-6)
+            clean = (video_embeds - video_embeds_mean) / video_embeds_std
             noise = torch.randn_like(clean)
             timestep = np.random.randn()
             timesteps = [timestep] * len(video_embeds)
