@@ -225,6 +225,7 @@ class New_FlowMatchingHead(nn.Module):
             # cond = cond.unsqueeze(0)
 
         B, N, C = x0.shape
+        x0 = x0 * 0.1
         noise = torch.randn_like(x0)
 
         # linear sampling of t
