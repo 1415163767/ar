@@ -22,7 +22,7 @@
 from dataclasses import dataclass
 from typing import Any, Callable, Optional, Union
 
-import copy
+import math
 import wandb
 import torch
 import torch.nn as nn
@@ -45,6 +45,234 @@ from transformers.utils.deprecation import deprecate_kwarg
 from transformers.utils.generic import check_model_inputs
 from qwen3_vl.configuration_qwen3_vl import Qwen3VLConfig, Qwen3VLTextConfig, Qwen3VLVisionConfig
 from vq import VQ
+
+
+
+def modulate(x, shift, scale):
+    return x * (1 + scale) + shift
+
+class TimestepEmbedder(nn.Module):
+    def __init__(self, hidden_size, frequency_embedding_size=256):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(frequency_embedding_size, hidden_size, bias=True),
+            nn.SiLU(),
+            nn.Linear(hidden_size, hidden_size, bias=True),
+        )
+        self.frequency_embedding_size = frequency_embedding_size
+
+    @staticmethod
+    def timestep_embedding(t, dim, max_period=10000):
+        """
+        Create sinusoidal timestep embeddings.
+        :param t: a 1-D Tensor of N indices, one per batch element.
+                          These may be fractional.
+        :param dim: the dimension of the output.
+        :param max_period: controls the minimum frequency of the embeddings.
+        :return: an (N, D) Tensor of positional embeddings.
+        """
+        # https://github.com/openai/glide-text2im/blob/main/glide_text2im/nn.py
+        half = dim // 2
+        freqs = torch.exp(
+            -math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32) / half
+        ).to(device=t.device)
+        args = t[:, None].float() * freqs[None]
+        embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
+        if dim % 2:
+            embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
+        return embedding
+
+    def forward(self, t):
+        t_freq = self.timestep_embedding(t, self.frequency_embedding_size).to(self.mlp[0].weight.dtype)
+        t_emb = self.mlp(t_freq)
+        return t_emb
+
+
+class ResBlock(nn.Module):
+    def __init__(
+        self,
+        channels
+    ):
+        super().__init__()
+        self.channels = channels
+
+        self.in_ln = nn.LayerNorm(channels, eps=1e-6)
+        self.mlp = nn.Sequential(
+            nn.Linear(channels, channels, bias=True),
+            nn.SiLU(),
+            nn.Linear(channels, channels, bias=True),
+        )
+
+        self.adaLN_modulation = nn.Sequential(
+            nn.SiLU(),
+            nn.Linear(channels, 3 * channels, bias=True)
+        )
+
+    def forward(self, x, y):
+        shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(y).chunk(3, dim=-1)
+        h = modulate(self.in_ln(x), shift_mlp, scale_mlp)
+        h = self.mlp(h)
+        return x + gate_mlp * h
+
+
+class FinalLayer(nn.Module):
+    def __init__(self, model_channels, out_channels):
+        super().__init__()
+        self.norm_final = nn.LayerNorm(model_channels, elementwise_affine=False, eps=1e-6)
+        self.linear = nn.Linear(model_channels, out_channels, bias=True)
+        self.adaLN_modulation = nn.Sequential(
+            nn.SiLU(),
+            nn.Linear(model_channels, 2 * model_channels, bias=True)
+        )
+
+    def forward(self, x, c):
+        shift, scale = self.adaLN_modulation(c).chunk(2, dim=-1)
+        x = modulate(self.norm_final(x), shift, scale)
+        x = self.linear(x)
+        return x
+
+
+class SimpleMLPAdaLN(nn.Module):
+    def __init__(
+        self,
+        in_channels,
+        model_channels,
+        out_channels,
+        z_channels,
+        num_res_blocks,
+    ):
+        super().__init__()
+
+        self.in_channels = in_channels
+        self.model_channels = model_channels
+        self.out_channels = out_channels
+        self.num_res_blocks = num_res_blocks
+
+        self.time_embed = TimestepEmbedder(model_channels)
+        self.cond_embed = nn.Linear(z_channels, model_channels)
+
+        self.input_proj = nn.Linear(in_channels, model_channels)
+
+        res_blocks = []
+        for i in range(num_res_blocks):
+            res_blocks.append(ResBlock(
+                model_channels,
+            ))
+
+        self.res_blocks = nn.ModuleList(res_blocks)
+        self.final_layer = FinalLayer(model_channels, out_channels)
+
+        self.initialize_weights()
+
+    def initialize_weights(self):
+        def _basic_init(module):
+            if isinstance(module, nn.Linear):
+                torch.nn.init.xavier_uniform_(module.weight)
+                if module.bias is not None:
+                    nn.init.constant_(module.bias, 0)
+        self.apply(_basic_init)
+
+        # Initialize timestep embedding MLP
+        nn.init.normal_(self.time_embed.mlp[0].weight, std=0.02)
+        nn.init.normal_(self.time_embed.mlp[2].weight, std=0.02)
+
+        # Zero-out adaLN modulation layers
+        for block in self.res_blocks:
+            nn.init.constant_(block.adaLN_modulation[-1].weight, 0)
+            nn.init.constant_(block.adaLN_modulation[-1].bias, 0)
+
+        # Zero-out output layers
+        nn.init.constant_(self.final_layer.adaLN_modulation[-1].weight, 0)
+        nn.init.constant_(self.final_layer.adaLN_modulation[-1].bias, 0)
+        nn.init.constant_(self.final_layer.linear.weight, 0)
+        nn.init.constant_(self.final_layer.linear.bias, 0)
+
+    def forward(self, x, t, c):
+        x = self.input_proj(x)
+        t = self.time_embed(t)
+        c = self.cond_embed(c)
+
+        y = t + c
+
+        for block in self.res_blocks:
+            x = block(x, y)
+
+        return self.final_layer(x, y)
+
+
+class New_FlowMatchingHead(nn.Module):
+    def __init__(
+        self, target_channels, depth, num_sampling_steps=10,
+    ):
+        super().__init__()
+        self.num_sampling_steps = num_sampling_steps
+
+        self.net = SimpleMLPAdaLN(
+            in_channels=target_channels,
+            model_channels=target_channels,
+            out_channels=target_channels,
+            z_channels=target_channels,
+            num_res_blocks=depth,
+        )
+    
+    def forward(self, x0, cond):
+        """
+        x0: clean token/latent [B, N, C]
+        cond: condition embedding [B, N, C_cond]
+        """
+        if x0.dim() == 2:
+            x0 = x0.unsqueeze(0)      # [1, N, C]
+            # cond = cond.unsqueeze(0)
+
+        B, N, C = x0.shape
+        noise = torch.randn_like(x0)
+
+        # linear sampling of t
+        t = torch.rand(B, device=x0.device)
+        t_exp = t.view(B, 1, 1).expand(B, N, C).to(x0.dtype)
+
+        # linear interpolation
+        x_t = (1 - t_exp) * x0 + t_exp * noise
+        v_target = (x0 - x_t) / t_exp
+
+        # predict velocity
+        pred_velocity = self.net(x_t, t, cond)
+
+        # mse loss
+        loss = F.mse_loss(pred_velocity, v_target)
+
+        return pred_velocity, loss
+    
+    @torch.no_grad()
+    def sample(self, z, schedule="linear"):
+        B, N, C = z.shape
+        sample_steps = self.num_sampling_steps
+
+        # get all timesteps ts and intervals Δts
+        if schedule == "linear":
+            ts = torch.arange(1, sample_steps + 1).flip(0) / sample_steps
+            dts = torch.ones_like(ts) * (1.0 / sample_steps)
+        elif schedule.startswith("pow"):  # "pow_0.25"
+            p = float(schedule.split("_")[1])
+            ts = torch.arange(0, sample_steps + 1).flip(0) ** (1 / p) / sample_steps ** (1 / p)
+            dts = ts[:-1] - ts[1:]
+        else:
+            raise NotImplementedError
+        ts = 1 - ts
+
+        # sampling (sample_steps) steps: noise X0 -> clean X1
+        trajs = []
+        x = torch.randn(B, N, C, device=z.device, dtype=z.dtype)
+        for t, dt in zip(ts, dts):
+            timesteps = torch.full((B,), t, device=z.device, dtype=z.dtype)
+            vc = self.net(x, timesteps, z)  # conditional v
+            dt = dt.to(x.dtype)
+            x = x + dt * vc
+            trajs.append(x)
+        
+        sampled_token = trajs[-1]
+
+        return sampled_token
 
 
 class Qwen3VLVisionMLP(nn.Module):
@@ -545,7 +773,8 @@ class Qwen3VLModelOutputWithPast(ModelOutput):
     hidden_states: Optional[tuple[torch.FloatTensor]] = None
     attentions: Optional[tuple[torch.FloatTensor]] = None
     rope_deltas: Optional[torch.LongTensor] = None
-    code_idx: Optional[torch.Tensor] = None
+    video_embeds: Optional[torch.Tensor] = None
+    video_mask: Optional[torch.Tensor] = None
 
 
 @auto_docstring
@@ -604,13 +833,13 @@ class Qwen3VLVisionModel(Qwen3VLPreTrainedModel):
         )
 
         # VQ projection for IBQ
-        self.vq = VQ(
-            z_channels=2048,    # 2048
-            codebook_size=16384,  # codebook size: 16384
-            codebook_dim=2048,  # 2048
-            use_transformer=False,
-            config=copy.deepcopy(config),  # use the same config as the model
-        )
+        # self.vq = VQ(
+        #     z_channels=2048,    # 2048
+        #     codebook_size=16384,  # codebook size: 16384
+        #     codebook_dim=2048,  # 2048
+        #     use_transformer=False,
+        #     config=copy.deepcopy(config),  # use the same config as the model
+        # )
         # self.vq_0 = VQ(
         #     z_channels=4096,    # 2048
         #     codebook_size=16384,  # codebook size: 16384
@@ -793,13 +1022,15 @@ class Qwen3VLVisionModel(Qwen3VLPreTrainedModel):
             #     code_idx_list.append(code_idx)
 
         hidden_states = self.merger(hidden_states)
-        if task == 'understanding':
-            return hidden_states, deepstack_feature_lists, None, None
-        elif task == 'generation':
-            discrete_hidden_states, code_idx, vq_loss = self.vq(hidden_states)
-            # code_idx_list.append(code_idx)
-            # return discrete_hidden_states, deepstack_feature_lists, code_idx_list, vq_loss
-            return discrete_hidden_states, deepstack_feature_lists, code_idx, vq_loss
+        return hidden_states, deepstack_feature_lists, None, None
+
+        # if task == 'understanding':
+        #     return hidden_states, deepstack_feature_lists, None, None
+        # elif task == 'generation':
+        #     discrete_hidden_states, code_idx, vq_loss = self.vq(hidden_states)
+        #     # code_idx_list.append(code_idx)
+        #     # return discrete_hidden_states, deepstack_feature_lists, code_idx_list, vq_loss
+        #     return discrete_hidden_states, deepstack_feature_lists, code_idx, vq_loss
 
 
 @auto_docstring(
@@ -1288,7 +1519,8 @@ class Qwen3VLModel(Qwen3VLPreTrainedModel):
             last_hidden_state=outputs.last_hidden_state,
             past_key_values=outputs.past_key_values,
             rope_deltas=self.rope_deltas,
-            code_idx=code_idx,
+            video_embeds=video_embeds,
+            video_mask=video_mask,
         )
 
 
@@ -1331,13 +1563,9 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPreTrainedModel, GenerationMixin):
     def __init__(self, config):
         super().__init__(config)
         self.model = Qwen3VLModel(config)
-        self.vision_vocab_size = self.model.visual.vq.quantize.codebook.shape[0] + 1
         self.lm_head = nn.Linear(config.text_config.hidden_size, config.text_config.vocab_size, bias=False)
-        self.gen_head = nn.Linear(config.text_config.hidden_size, self.vision_vocab_size, bias=False)
-        # self.gen_head_0 = nn.Linear(config.text_config.hidden_size, self.vision_vocab_size, bias=False)
-        # self.gen_head_1 = nn.Linear(config.text_config.hidden_size, self.vision_vocab_size, bias=False)
-        # self.gen_head_2 = nn.Linear(config.text_config.hidden_size, self.vision_vocab_size, bias=False)
-        # self.gen_head_final = nn.Linear(config.text_config.hidden_size, self.vision_vocab_size, bias=False)
+        self.depth = 12
+        self.New_Flow_Matching_Head = New_FlowMatchingHead(config.text_config.hidden_size, self.depth)
 
         self.post_init()
         self.forward_step = 0
@@ -1417,31 +1645,11 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPreTrainedModel, GenerationMixin):
             **kwargs,
         )
         hidden_states = outputs.last_hidden_state
-
-        # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
-        slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
-
-        video_start_pos = None
-        video_end_pos = None
-        loss = None
-
-        if task_type == "understanding":
-            logits = self.lm_head(hidden_states[:, slice_indices, :])
-            loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.text_config.vocab_size)
-        elif task_type == "generation":
-            logits = self.gen_head(hidden_states[:, slice_indices, :])
-            video_start_pos = [list(label_c).index(self.config.vision_start_token_id) for label_c in labels]
-            video_end_pos = [len(label_c) - 1 - list(label_c)[::-1].index(self.config.vision_end_token_id) for label_c in labels]
-            bs = hidden_states.shape[0]
-            chunk_size = outputs.code_idx.shape[0] // bs
-            codes = outputs.code_idx.view(bs, chunk_size)
-            for i, label_c in enumerate(labels):
-                label_c[:video_start_pos[i]+1] = -100
-                label_c[video_start_pos[i]+1:video_start_pos[i]+len(codes[i])+1] = codes[i].flatten()
-                label_c[video_end_pos[i]] = 16384
-                label_c[video_end_pos[i]+1:] = -100
-
-            loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.vision_vocab_size)
+        video_indices = outputs.video_mask[0].nonzero(as_tuple=True)[0]  # tensor([start, ..., end])
+        video_start_index = video_indices[0].item()
+        video_end_index = video_indices[-1].item()
+        condition = hidden_states[:, video_start_index-1:video_end_index, :]   
+        logits, loss = self.New_Flow_Matching_Head(outputs.video_embeds, condition)
 
         self.forward_step += 1
         if self.forward_step % 10 == 0:
