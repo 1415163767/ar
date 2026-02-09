@@ -611,27 +611,6 @@ class Qwen3VLVisionModel(Qwen3VLPreTrainedModel):
             use_transformer=False,
             config=copy.deepcopy(config),  # use the same config as the model
         )
-        self.vq_0 = VQ(
-            z_channels=2048,    # 2048
-            codebook_size=16384,  # codebook size: 16384
-            codebook_dim=2048,  # 2048
-            use_transformer=False,
-            config=copy.deepcopy(config),  # use the same config as the model
-        )
-        self.vq_1 = VQ(
-            z_channels=2048,    # 2048
-            codebook_size=16384,  # codebook size: 16384
-            codebook_dim=2048,  # 2048
-            use_transformer=False,
-            config=copy.deepcopy(config),  # use the same config as the model
-        )
-        self.vq_2 = VQ(
-            z_channels=2048,    # 2048
-            codebook_size=16384,  # codebook size: 16384
-            codebook_dim=2048,  # 2048
-            use_transformer=False,
-            config=copy.deepcopy(config),  # use the same config as the model
-        )
         self.gradient_checkpointing = False
 
     def rot_pos_emb(self, grid_thw: torch.Tensor) -> torch.Tensor:
@@ -782,23 +761,13 @@ class Qwen3VLVisionModel(Qwen3VLPreTrainedModel):
                 position_embeddings=position_embeddings,
                 **kwargs,
             )
-            if layer_num in self.deepstack_visual_indexes:
-                deepstack_feature = self.deepstack_merger_list[self.deepstack_visual_indexes.index(layer_num)](
-                    hidden_states
-                )
-                vq_info = f"vq_{layer_num // 5 - 1}"
-                vq_module = getattr(self, vq_info)
-                discrete_deepstack_feature, code_idx, vq_loss = vq_module(deepstack_feature, info=vq_info)
-                deepstack_feature_lists.append(discrete_deepstack_feature)
-                code_idx_list.append(code_idx)
 
         hidden_states = self.merger(hidden_states)
         if task == 'understanding':
             return hidden_states, deepstack_feature_lists, None, None
         elif task == 'generation':
             discrete_hidden_states, code_idx, vq_loss = self.vq(hidden_states)
-            code_idx_list.append(code_idx)
-            return discrete_hidden_states, deepstack_feature_lists, code_idx_list, vq_loss
+            return discrete_hidden_states, deepstack_feature_lists, code_idx, vq_loss
 
 
 @auto_docstring(
@@ -1417,10 +1386,7 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPreTrainedModel, GenerationMixin):
         self.model = Qwen3VLModel(config)
         self.vision_vocab_size = self.model.visual.vq.quantize.codebook.shape[0] + 1
         self.lm_head = nn.Linear(config.text_config.hidden_size, config.text_config.vocab_size, bias=False)
-        self.gen_head_0 = nn.Linear(config.text_config.hidden_size, self.vision_vocab_size, bias=False)
-        self.gen_head_1 = nn.Linear(config.text_config.hidden_size, self.vision_vocab_size, bias=False)
-        self.gen_head_2 = nn.Linear(config.text_config.hidden_size, self.vision_vocab_size, bias=False)
-        self.gen_head_final = nn.Linear(config.text_config.hidden_size, self.vision_vocab_size, bias=False)
+        self.gen_head = nn.Linear(config.text_config.hidden_size, self.vision_vocab_size, bias=False)
 
         self.post_init()
         self.forward_step = 0
@@ -1499,10 +1465,7 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPreTrainedModel, GenerationMixin):
             task_type=task_type,
             **kwargs,
         )
-        hidden_states_0 = outputs.last_hidden_state.clone()
-        hidden_states_1 = outputs.last_hidden_state.clone()
-        hidden_states_2 = outputs.last_hidden_state.clone()
-        hidden_states_final = outputs.last_hidden_state.clone()
+        hidden_states = outputs.last_hidden_state
 
         # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
         slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
@@ -1514,45 +1477,32 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPreTrainedModel, GenerationMixin):
             logits = self.lm_head(hidden_states_final[:, slice_indices, :])
             loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.text_config.vocab_size)
         elif task_type == "generation":
-            logits_0 = self.gen_head_0(hidden_states_0[:, slice_indices, :])
-            logits_1 = self.gen_head_1(hidden_states_1[:, slice_indices, :])
-            logits_2 = self.gen_head_2(hidden_states_2[:, slice_indices, :])
-            logits_final = self.gen_head_final(hidden_states_final[:, slice_indices, :])
-            labels_0 = labels.clone()
-            labels_1 = labels.clone()
-            labels_2 = labels.clone()
-            labels_final = labels.clone()
-            labels_list = [labels_0, labels_1, labels_2, labels_final]
+            logits = self.gen_head(hidden_states[:, slice_indices, :])
             video_start_pos = [list(label_c).index(self.config.vision_start_token_id) for label_c in labels]
             video_end_pos = [len(label_c) - 1 - list(label_c)[::-1].index(self.config.vision_end_token_id) for label_c in labels]
-            bs = hidden_states_final.shape[0]
-            chunk_size = outputs.code_idx[0].shape[0] // bs
-            for i in range(len(outputs.code_idx)):
-                codes = outputs.code_idx[i].view(bs, chunk_size)
-                cur_labels = labels_list[i]
-                for j, label_c in enumerate(cur_labels):
-                    label_c[:video_start_pos[j]+1] = -100
-                    label_c[video_start_pos[j]+1:video_start_pos[j]+len(codes[j])+1] = codes[j].flatten()
-                    label_c[video_end_pos[j]] = 16384
-                    label_c[video_end_pos[j]+1:] = -100
+            bs = hidden_states.shape[0]
+            chunk_size = outputs.code_idx.shape[0] // bs
+            codes = outputs.code_idx.view(bs, chunk_size)
+            for j, label_c in enumerate(labels):
+                label_c[:video_start_pos[j]+1] = -100
+                label_c[video_start_pos[j]+1:video_start_pos[j]+len(codes[j])+1] = codes[j].flatten()
+                label_c[video_end_pos[j]] = 16384
+                label_c[video_end_pos[j]+1:] = -100
 
-            loss_0 = self.loss_function(logits=logits_0, labels=labels_0, vocab_size=self.vision_vocab_size)
-            loss_1 = self.loss_function(logits=logits_1, labels=labels_1, vocab_size=self.vision_vocab_size)
-            loss_2 = self.loss_function(logits=logits_2, labels=labels_2, vocab_size=self.vision_vocab_size)
-            loss_final = self.loss_function(logits=logits_final, labels=labels_final, vocab_size=self.vision_vocab_size)
+            loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.vision_vocab_size)
 
         # loss_total = (loss_0 + loss_1 + loss_2) * 0.1 + loss_final * 0.7
-        loss_total = loss_0 + loss_1 + loss_2 + loss_final
+        loss_total = loss
 
         self.forward_step += 1
         if self.forward_step % 10 == 0:
             if wandb.run is not None and ((not dist.is_initialized()) or dist.get_rank() == 0):
                 if task_type == 'generation':
                     wandb.log({
-                        'generation_loss_0': loss_0.item(),
-                        'generation_loss_1': loss_1.item(),
-                        'generation_loss_2': loss_2.item(),
-                        'generation_loss_final': loss_final.item(),
+                        'generation_loss_0': 0,
+                        'generation_loss_1': 0,
+                        'generation_loss_2': 0,
+                        'generation_loss_final': loss.item(),
                         'generation_loss_total': loss_total.item(),
                     })
                 elif task_type == 'understanding':
@@ -1560,7 +1510,7 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPreTrainedModel, GenerationMixin):
 
         return Qwen3VLCausalLMOutputWithPast(
             loss=loss_total,
-            logits=loss_final,
+            logits=logits,
             past_key_values=outputs.past_key_values,
             rope_deltas=outputs.rope_deltas,
         )
