@@ -1474,7 +1474,7 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPreTrainedModel, GenerationMixin):
         video_end_pos = None
         loss = None
         if task_type == "understanding":
-            logits = self.lm_head(hidden_states_final[:, slice_indices, :])
+            logits = self.lm_head(hidden_states[:, slice_indices, :])
             loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.text_config.vocab_size)
         elif task_type == "generation":
             logits = self.gen_head(hidden_states[:, slice_indices, :])
@@ -1488,7 +1488,6 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPreTrainedModel, GenerationMixin):
                 label_c[video_start_pos[j]+1:video_start_pos[j]+len(codes[j])+1] = codes[j].flatten()
                 label_c[video_end_pos[j]] = 16384
                 label_c[video_end_pos[j]+1:] = -100
-
             loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.vision_vocab_size)
 
         # loss_total = (loss_0 + loss_1 + loss_2) * 0.1 + loss_final * 0.7
