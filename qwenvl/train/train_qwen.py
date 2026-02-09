@@ -102,18 +102,12 @@ def set_model(model_args, model):
         for n, p in model.language_model.named_parameters():
             p.requires_grad = True
         model.lm_head.requires_grad = True
-        model.gen_head_0.requires_grad = True
-        model.gen_head_1.requires_grad = True
-        model.gen_head_2.requires_grad = True
-        model.gen_head_final.requires_grad = True
+        model.gen_head.requires_grad = True
     else:
         for n, p in model.language_model.named_parameters():
             p.requires_grad = False
         model.lm_head.requires_grad = False
-        model.gen_head_0.requires_grad = False
-        model.gen_head_1.requires_grad = False
-        model.gen_head_2.requires_grad = False
-        model.gen_head_final.requires_grad = False
+        model.gen_head.requires_grad = False
     
     if model_args.tune_vqvae:
         for n, p in model.visual.vq.named_parameters():
