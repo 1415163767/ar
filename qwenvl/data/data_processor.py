@@ -3,10 +3,9 @@ import random
 import logging
 import re
 import os
-import csv
 import time
-import yaml
 import itertools
+import pandas as pd
 from dataclasses import dataclass
 from typing import Dict, Sequence, List, Any
 from collections.abc import Sequence
@@ -141,16 +140,13 @@ def _build_messages(item: Dict[str, Any]) -> List[Dict[str, Any]]:
 
     # Build media pools with absolute paths
     if isinstance(item, dict) and 'video_path' in item:
-        videos = [item['video_path'].replace('/mnt/yifanyang/', '/blob/')]
-        video_pool = [{"type": "video", "video": vid} for vid in videos]
+        video_pool = [{"type": "video", "video": item['video_path'].replace('/mnt/yifanyang/', '/blob/')}]
         caption = random.choice([item['caption'], item['short_caption']])
         item = {'conversations': [{'from': 'human', 'value': '<video>\nDescribe this video.'}, {'from': 'gpt', 'value': caption}]}
     elif "image" in item:
-        base_path = item["image_dir"]
-        images = item["image"]
-        if isinstance(images, str):
-            images = [images]
-        image_pool = [{"type": "image", "image": os.path.join(base_path, img)} for img in images]
+        video_pool = [{"type": "video", "video": os.path.join("/zehui/laion20M", item['image'])}]
+        caption = item['caption']
+        item = {'conversations': [{'from': 'human', 'value': '<video>\nDescribe this image.'}, {'from': 'gpt', 'value': caption}]}
         
     # check if image_pool and video_pool are both empty
     if not image_pool and not video_pool:
@@ -300,71 +296,35 @@ class LazySupervisedDataset(Dataset):
 
         # Load Video Data
         if data_args.add_video_data:
+            pretrain_data_path = "/blob/dyb/processed_data/koala/video_captions_all.json"
+            print(f"Loading from {pretrain_data_path} ...")
+            with open(pretrain_data_path, 'r', encoding='utf-8') as f:
+                list_data_dict = json.load(f)
+            print(f"[OK] {pretrain_data_path} | entries: {len(list_data_dict)}")
+            pretrain_data_path = "/blob/dyb/processed_data/IPOW_VIDU/test_videos_dataset.json"
+            print(f"Loading from {pretrain_data_path} ...")
+            with open(pretrain_data_path, 'r', encoding='utf-8') as f:
+                list_data_dict.extend(json.load(f))
+            print(f"[OK] {pretrain_data_path} | entries: {len(list_data_dict)}")
+
             data_dir = "/blob/dyb/processed_data"
             for root, dirs, files in os.walk(data_dir):
                 dirs[:] = [d for d in dirs if d != 'videos']
                 if 'video_captions_all_long_short.json' in files:
-                    removed_count = 0
-                    too_short_count = 0
                     json_path = os.path.join(root, 'video_captions_all_long_short.json')
                     with open(json_path, 'r', encoding='utf-8') as f:
                         data = json.load(f)
-                    
-                    for item in data:
-                        if "caption" in item and isinstance(item["caption"], str):
-                            if len(item["caption"]) <= 10:
-                                too_short_count += 1
-                                continue
-                            cleaned, removed = clean_caption(item["caption"])
-                            item["caption"] = cleaned
-                            if removed:
-                                removed_count += 1
-
                     list_data_dict.extend(data)
-                    print(
-                        f"[OK] {json_path} | "
-                        f"entries: {len(data)}, "
-                        f"cleaned: {removed_count}, "
-                        f"too short: {too_short_count}"
-                    )
-
-        # newly add
-        pretrain_data_path = "/blob/dyb/processed_data/koala/video_captions_vbench_related.json"
-        print(f"Loading from {pretrain_data_path} ...")
-        with open(pretrain_data_path, 'r', encoding='utf-8') as f:
-            list_data_dict.extend(json.load(f))
-        print(f"[OK] {pretrain_data_path} | entries: {len(list_data_dict)}")
-        pretrain_data_path = "/blob/dyb/processed_data/IPOW_VIDU/test_videos_dataset.json"
-        print(f"Loading from {pretrain_data_path} ...")
-        with open(pretrain_data_path, 'r', encoding='utf-8') as f:
-            list_data_dict.extend(json.load(f))
-        print(f"[OK] {pretrain_data_path} | entries: {len(list_data_dict)}")
+                    print(f"[OK] {json_path} | entries: {len(data)}")
         
         # Load Image Data
         if data_args.add_image_data:
-            # image_json_dir = ['/blob/waq/playground/data/llava_1_6/llava_next_raw_format_processed.json', '/blob/waq/playground/data/LLaVA-Pretrain/blip_laion_cc_sbu_558k.json']
-            # image_dirs = ['/blob/waq/playground/data/llava_1_6/images', '/blob/waq/playground/data/LLaVA-Pretrain/images']
-            image_json_dir = ['/mnt/yifanyang/waq/playground/data/llava_1_6/llava_next_raw_format_processed.json']
-            image_dirs = ['/mnt/yifanyang/waq/playground/data/llava_1_6/images']
-            yaml_path = "/mnt/yifanyang/dyb/yijia_mid_stage.yaml"
-            with open(yaml_path, "r") as f:
-                cfg = yaml.safe_load(f)
-            image_json_dir.extend([item["json_path"] for item in cfg["datasets"]])
-            image_dirs.extend(["/mnt/yifanyang/hwq/data/llava_instruct/images" for _ in cfg["datasets"]])
-            for image_dir, image_json in zip(image_dirs, image_json_dir):
-                try:
-                    with open(image_json.replace('/blob', '/mnt/yifanyang'), "r") as f:
-                        annotations = json.load(f)
-                except:
-                    print(f"### failed to load image dataset {image_json}")
-                    continue
-                for ann in annotations:
-                    ann['image_dir'] = image_dir
-                print(f"### add image dataset {image_json}: {len(annotations)}")
-                list_data_dict += annotations
-            if data_args.show_data_structure:    
-                print("Image Data Structure Example:", list_data_dict[-1])
-            print("=" * 100)
+            img_csv = "/zehui/laion20M/laion20M_merged_dedup.csv"
+            df = pd.read_csv(img_csv)
+            images = df["videos"].tolist()
+            captions = df["caption"].tolist()
+            list_data_dict += [{"image": im, "caption": cap} for im, cap in zip(images, captions)]
+            print(f"Loaded {len(df)} image/video items from CSV {img_csv}")
         
         print(f"Total training samples: {len(list_data_dict)}")
         random.shuffle(list_data_dict)  # Randomly shuffle the data for training
