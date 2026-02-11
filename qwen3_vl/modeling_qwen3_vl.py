@@ -1478,16 +1478,17 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPreTrainedModel, GenerationMixin):
             loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.text_config.vocab_size)
         elif task_type == "generation":
             logits = self.gen_head(hidden_states[:, slice_indices, :])
-            video_start_pos = [list(label_c).index(self.config.vision_start_token_id) for label_c in labels]
-            video_end_pos = [len(label_c) - 1 - list(label_c)[::-1].index(self.config.vision_end_token_id) for label_c in labels]
-            bs = hidden_states.shape[0]
-            chunk_size = outputs.code_idx.shape[0] // bs
-            codes = outputs.code_idx.view(bs, chunk_size)
-            for j, label_c in enumerate(labels):
-                label_c[:video_start_pos[j]+1] = -100
-                label_c[video_start_pos[j]+1:video_start_pos[j]+len(codes[j])+1] = codes[j].flatten()
-                label_c[video_end_pos[j]] = 16384
-                label_c[video_end_pos[j]+1:] = -100
+            with torch.no_grad():
+                video_start_pos = [list(label_c).index(self.config.vision_start_token_id) for label_c in labels]
+                video_end_pos = [len(label_c) - 1 - list(label_c)[::-1].index(self.config.vision_end_token_id) for label_c in labels]
+                bs = hidden_states.shape[0]
+                chunk_size = outputs.code_idx.shape[0] // bs
+                codes = outputs.code_idx.view(bs, chunk_size)
+                for j, label_c in enumerate(labels):
+                    label_c[:video_start_pos[j]+1] = -100
+                    label_c[video_start_pos[j]+1:video_start_pos[j]+len(codes[j])+1] = codes[j].flatten()
+                    label_c[video_end_pos[j]] = 16384
+                    label_c[video_end_pos[j]+1:] = -100
             loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.vision_vocab_size)
 
         # loss_total = (loss_0 + loss_1 + loss_2) * 0.1 + loss_final * 0.7
