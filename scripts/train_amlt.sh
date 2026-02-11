@@ -10,7 +10,7 @@ deepspeed=./scripts/zero2.json
 
 # Model configuration
 llm=Qwen/Qwen3-VL-2B-Instruct  # Using HuggingFace model ID
-vq_path=/blob/dyb_output/icml2026/multiple_codebook_ema_scale_image_video/checkpoint-800000/model.safetensors
+vq_path=/blob/dyb_output/icml2026/multiple_codebook_ema_scale_image_video/checkpoint-963425/model.safetensors
 
 # Training hyperparameters
 lr=2e-5
