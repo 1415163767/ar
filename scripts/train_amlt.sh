@@ -66,7 +66,7 @@ args="
     --logging_steps 10 \
     --model_max_length 32768 \
     --gradient_checkpointing True \
-    --dataloader_num_workers 8 \
+    --dataloader_num_workers 4 \
     --run_name ${run_name} \
     --report_to wandb"
 
