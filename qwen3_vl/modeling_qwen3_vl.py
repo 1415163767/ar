@@ -1499,10 +1499,7 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPreTrainedModel, GenerationMixin):
             task_type=task_type,
             **kwargs,
         )
-        hidden_states_0 = outputs.last_hidden_state.clone()
-        hidden_states_1 = outputs.last_hidden_state.clone()
-        hidden_states_2 = outputs.last_hidden_state.clone()
-        hidden_states_final = outputs.last_hidden_state.clone()
+        hidden_states = outputs.last_hidden_state
 
         # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
         slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
@@ -1511,30 +1508,31 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPreTrainedModel, GenerationMixin):
         video_end_pos = None
         loss = None
         if task_type == "understanding":
-            logits = self.lm_head(hidden_states_final[:, slice_indices, :])
+            logits = self.lm_head(hidden_states[:, slice_indices, :])
             loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.text_config.vocab_size)
         elif task_type == "generation":
-            logits_0 = self.gen_head_0(hidden_states_0[:, slice_indices, :])
-            logits_1 = self.gen_head_1(hidden_states_1[:, slice_indices, :])
-            logits_2 = self.gen_head_2(hidden_states_2[:, slice_indices, :])
-            logits_final = self.gen_head_final(hidden_states_final[:, slice_indices, :])
-            labels_0 = labels.clone()
-            labels_1 = labels.clone()
-            labels_2 = labels.clone()
-            labels_final = labels.clone()
-            labels_list = [labels_0, labels_1, labels_2, labels_final]
-            video_start_pos = [list(label_c).index(self.config.vision_start_token_id) for label_c in labels]
-            video_end_pos = [len(label_c) - 1 - list(label_c)[::-1].index(self.config.vision_end_token_id) for label_c in labels]
-            bs = hidden_states_final.shape[0]
-            chunk_size = outputs.code_idx[0].shape[0] // bs
-            for i in range(len(outputs.code_idx)):
-                codes = outputs.code_idx[i].view(bs, chunk_size)
-                cur_labels = labels_list[i]
-                for j, label_c in enumerate(cur_labels):
-                    label_c[:video_start_pos[j]+1] = -100
-                    label_c[video_start_pos[j]+1:video_start_pos[j]+len(codes[j])+1] = codes[j].flatten()
-                    label_c[video_end_pos[j]] = 16384
-                    label_c[video_end_pos[j]+1:] = -100
+            logits_0 = self.gen_head_0(hidden_states[:, slice_indices, :])
+            logits_1 = self.gen_head_1(hidden_states[:, slice_indices, :])
+            logits_2 = self.gen_head_2(hidden_states[:, slice_indices, :])
+            logits_final = self.gen_head_final(hidden_states[:, slice_indices, :])
+            with torch.no_grad():
+                labels_0 = labels.clone()
+                labels_1 = labels.clone()
+                labels_2 = labels.clone()
+                labels_final = labels.clone()
+                labels_list = [labels_0, labels_1, labels_2, labels_final]
+                video_start_pos = [list(label_c).index(self.config.vision_start_token_id) for label_c in labels]
+                video_end_pos = [len(label_c) - 1 - list(label_c)[::-1].index(self.config.vision_end_token_id) for label_c in labels]
+                bs = hidden_states.shape[0]
+                chunk_size = outputs.code_idx[0].shape[0] // bs
+                for i in range(len(outputs.code_idx)):
+                    codes = outputs.code_idx[i].view(bs, chunk_size)
+                    cur_labels = labels_list[i]
+                    for j, label_c in enumerate(cur_labels):
+                        label_c[:video_start_pos[j]+1] = -100
+                        label_c[video_start_pos[j]+1:video_start_pos[j]+len(codes[j])+1] = codes[j].flatten()
+                        label_c[video_end_pos[j]] = 16384
+                        label_c[video_end_pos[j]+1:] = -100
 
             loss_0 = self.loss_function(logits=logits_0, labels=labels_0, vocab_size=self.vision_vocab_size)
             loss_1 = self.loss_function(logits=logits_1, labels=labels_1, vocab_size=self.vision_vocab_size)
