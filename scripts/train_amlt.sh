@@ -13,8 +13,8 @@ llm=Qwen/Qwen3-VL-2B-Instruct  # Using HuggingFace model ID
 vq_path=/blob/dyb_output/icml2026/multiple_codebook_ema_scale_image_video/checkpoint-963425/model.safetensors
 
 # Training hyperparameters
-lr=2e-5
-batch_size=8
+lr=5e-6
+batch_size=2
 grad_accum_steps=1
 
 # Training entry point
@@ -35,8 +35,8 @@ args="
     --model_name_or_path "${llm}" \
     --dataset_use ${datasets} \
     --train_vq_wo_llm False \
-    --add_image_data True \
-    --add_video_data False \
+    --add_image_data False \
+    --add_video_data True \
     --vq_path ${vq_path} \
     --data_flatten False \
     --tune_mm_vision False \
@@ -60,10 +60,9 @@ args="
     --save_total_limit 100 \
     --learning_rate ${lr} \
     --weight_decay 0.01 \
-    --warmup_ratio 0.03 \
     --max_grad_norm 1 \
-    --lr_scheduler_type "cosine_with_min_lr" \
-    --logging_steps 10 \
+    --lr_scheduler_type "constant" \
+    --logging_steps 20 \
     --model_max_length 32768 \
     --gradient_checkpointing True \
     --dataloader_num_workers 4 \
