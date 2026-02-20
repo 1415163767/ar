@@ -10,12 +10,13 @@ deepspeed=./scripts/zero2.json
 
 # Model configuration
 llm=Qwen/Qwen3-VL-2B-Instruct  # Using HuggingFace model ID
+llm=/blob/dyb_output/icml2026/qwen3vl_2b_multiple_ema_codebook_uni_image_pretrain/checkpoint-77891
 vq_path=/blob/dyb_output/icml2026/multiple_codebook_ema_scale_image_video/checkpoint-963425/model.safetensors
 
 # Training hyperparameters
 lr=5e-6
 batch_size=2
-grad_accum_steps=1
+grad_accum_steps=4
 
 # Training entry point
 entry_file=qwenvl/train/train_qwen.py
@@ -25,8 +26,8 @@ datasets=0_30_s_academic_v0_1,0_30_s_youtube_v0_1,0_30_s_activitynetqa,0_30_s_ne
 # datasets=0_30_s_academic_v0_1,0_30_s_youtube_v0_1,0_30_s_activitynetqa,0_30_s_nextqa,0_30_s_perceptiontest
 
 # Output configuration
-run_name="qwen3vl_2b_multiple_ema_codebook_uni_image_pretrain"
-output_dir=/blob/dyb_output/icml2026/qwen3vl_2b_multiple_ema_codebook_uni_image_pretrain
+run_name="qwen3vl_2b_multiple_ema_codebook_uni_video_pretrain"
+output_dir=/blob/dyb_output/icml2026/qwen3vl_2b_multiple_ema_codebook_uni_video_pretrain
 export WANDB_PROJECT="icml_ar_ablation"
 
 # Training arguments
@@ -56,7 +57,7 @@ args="
     --video_min_frames 4 \
     --eval_strategy "no" \
     --save_strategy "steps" \
-    --save_steps 10000 \
+    --save_steps 5000 \
     --save_total_limit 100 \
     --learning_rate ${lr} \
     --weight_decay 0.01 \
