@@ -141,7 +141,8 @@ def _build_messages(item: Dict[str, Any]) -> List[Dict[str, Any]]:
     # Build media pools with absolute paths
     if isinstance(item, dict) and 'video_path' in item:
         video_pool = [{"type": "video", "video": item['video_path'].replace('/mnt/yifanyang/', '/blob/')}]
-        caption = random.choice([item['caption'], item['short_caption']])
+        # caption = random.choice([item['caption'], item['short_caption']])
+        caption = item['caption']
         item = {'conversations': [{'from': 'human', 'value': '<video>\nDescribe this video.'}, {'from': 'gpt', 'value': caption}]}
     elif "image" in item:
         video_pool = [{"type": "video", "video": os.path.join("/zehui/laion20M", item['image'])}]
@@ -306,16 +307,39 @@ class LazySupervisedDataset(Dataset):
             with open(pretrain_data_path, 'r', encoding='utf-8') as f:
                 list_data_dict.extend(json.load(f))
             print(f"[OK] {pretrain_data_path} | entries: {len(list_data_dict)}")
+            pretrain_data_path = "/blob/dyb/processed_data/koala/video_captions_vbench_related.json"
+            print(f"Loading from {pretrain_data_path} ...")
+            with open(pretrain_data_path, 'r', encoding='utf-8') as f:
+                list_data_dict.extend(json.load(f))
+            print(f"[OK] {pretrain_data_path} | entries: {len(list_data_dict)}")
 
             data_dir = "/blob/dyb/processed_data"
             for root, dirs, files in os.walk(data_dir):
                 dirs[:] = [d for d in dirs if d != 'videos']
                 if 'video_captions_all_long_short.json' in files:
+                    removed_count = 0
+                    too_short_count = 0
                     json_path = os.path.join(root, 'video_captions_all_long_short.json')
                     with open(json_path, 'r', encoding='utf-8') as f:
                         data = json.load(f)
+                    
+                    for item in data:
+                        if "caption" in item and isinstance(item["caption"], str):
+                            if len(item["caption"]) <= 10:
+                                too_short_count += 1
+                                continue
+                            cleaned, removed = clean_caption(item["caption"])
+                            item["caption"] = cleaned
+                            if removed:
+                                removed_count += 1
+
                     list_data_dict.extend(data)
-                    print(f"[OK] {json_path} | entries: {len(data)}")
+                    print(
+                        f"[OK] {json_path} | "
+                        f"entries: {len(data)}, "
+                        f"cleaned: {removed_count}, "
+                        f"too short: {too_short_count}"
+                    )
         
         # Load Image Data
         if data_args.add_image_data:
