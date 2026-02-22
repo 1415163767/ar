@@ -6,7 +6,7 @@ MASTER_PORT=${MASTER_PORT:-$(shuf -i 20001-29999 -n 1)}
 NNODES=${WORLD_SIZE:-1}
 
 # DeepSpeed configuration
-deepspeed=./scripts/zero2.json
+deepspeed=./scripts/zero3.json
 
 # Model configuration
 llm=Qwen/Qwen3-VL-2B-Instruct  # Using HuggingFace model ID
