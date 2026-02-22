@@ -1507,6 +1507,7 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPreTrainedModel, GenerationMixin):
                     })
                 elif task_type == 'understanding':
                     wandb.log({'understanding_loss': loss.item()})
+        torch.cuda.empty_cache()
 
         return Qwen3VLCausalLMOutputWithPast(
             loss=loss_total,
