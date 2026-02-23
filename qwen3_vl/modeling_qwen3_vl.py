@@ -1527,6 +1527,7 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPreTrainedModel, GenerationMixin):
                 video_start_pos = [list(label_c).index(self.config.vision_start_token_id) for label_c in labels]
                 video_end_pos = [len(label_c) - 1 - list(label_c)[::-1].index(self.config.vision_end_token_id) for label_c in labels]
                 bs = hidden_states.shape[0]
+                assert outputs.code_idx.shape[0] % bs == 0, f"code_idx not divisible by bs: {outputs.code_idx.shape[0]} vs {bs}"
                 chunk_size = outputs.code_idx[0].shape[0] // bs
                 for i in range(len(outputs.code_idx)):
                     codes = outputs.code_idx[i].view(bs, chunk_size)
@@ -1546,7 +1547,7 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPreTrainedModel, GenerationMixin):
         loss_total = loss_0 + loss_1 + loss_2 + loss_final
 
         self.forward_step += 1
-        if self.forward_step % 10 == 0:
+        if self.forward_step % 20 == 0:
             if wandb.run is not None and ((not dist.is_initialized()) or dist.get_rank() == 0):
                 if task_type == 'generation':
                     wandb.log({
@@ -1558,7 +1559,7 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPreTrainedModel, GenerationMixin):
                     })
                 elif task_type == 'understanding':
                     wandb.log({'understanding_loss': loss.item()})
-        torch.cuda.empty_cache()
+            torch.cuda.empty_cache()
 
         return Qwen3VLCausalLMOutputWithPast(
             loss=loss_total,
