@@ -1482,13 +1482,32 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPreTrainedModel, GenerationMixin):
                 video_start_pos = [list(label_c).index(self.config.vision_start_token_id) for label_c in labels]
                 video_end_pos = [len(label_c) - 1 - list(label_c)[::-1].index(self.config.vision_end_token_id) for label_c in labels]
                 bs = hidden_states.shape[0]
+                assert outputs.code_idx.shape[0] % bs == 0, f"code_idx not divisible by bs: {outputs.code_idx.shape[0]} vs {bs}"
                 chunk_size = outputs.code_idx.shape[0] // bs
                 codes = outputs.code_idx.view(bs, chunk_size)
                 for j, label_c in enumerate(labels):
                     label_c[:video_start_pos[j]+1] = -100
                     label_c[video_start_pos[j]+1:video_start_pos[j]+len(codes[j])+1] = codes[j].flatten()
                     label_c[video_end_pos[j]] = 16384
-                    label_c[video_end_pos[j]+1:] = -100
+                    label_c[video_end_pos[j]+1:] = -100 
+                    
+                    max_label = label_c.max().item()
+                    min_label = label_c.min().item()
+                
+                    print(
+                        f"[Rank {dist.get_rank()}] "
+                        f"start={video_start_pos[j]}, "
+                        f"end={video_end_pos[j]}, "
+                        f"bs={bs}, "
+                        f"chunk_size={chunk_size}, "
+                        f"max={max_label}, "
+                        f"min={min_label}"
+                    )
+                
+                    if max_label >= self.vision_vocab_size or min_label < -100:
+                        print("🔥 Illegal label detected BEFORE loss!")
+                        raise RuntimeError("Stopping before CUDA assert")
+                        
             loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.vision_vocab_size)
 
         # loss_total = (loss_0 + loss_1 + loss_2) * 0.1 + loss_final * 0.7
