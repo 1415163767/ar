@@ -198,9 +198,9 @@ class Qwen3VLVideoProcessor(BaseVideoProcessor):
         for shape, stacked_videos in grouped_videos.items():
             B, T, C, H, W = stacked_videos.shape
             num_frames, height, width = T, H, W
-            expected_frames = 31
-            if num_frames != expected_frames:
-                raise RuntimeError(f"🔥 Unexpected number of frames: {T}, expected: {expected_frames}")
+            min_frames, max_frames = 61, 62
+            if not (min_frames <= num_frames <= max_frames):
+                raise RuntimeError(f"🔥 Unexpected number of frames: {num_frames}, expected: {min_frames}--{max_frames}")
             if do_resize:
                 # important - for generation only (do not sample)
                 if kwargs['task'] == 'generation':
