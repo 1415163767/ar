@@ -1490,7 +1490,8 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPreTrainedModel, GenerationMixin):
                     label_c[video_start_pos[j]+1:video_start_pos[j]+len(codes[j])+1] = codes[j].flatten()
                     label_c[video_end_pos[j]] = 16384
                     label_c[video_end_pos[j]+1:] = -100 
-                    
+
+                    '''
                     max_label = label_c.max().item()
                     min_label = label_c.min().item()
                 
@@ -1507,6 +1508,7 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPreTrainedModel, GenerationMixin):
                     if max_label >= self.vision_vocab_size or min_label < -100:
                         print("🔥 Illegal label detected BEFORE loss!")
                         raise RuntimeError("Stopping before CUDA assert")
+                    '''
                         
             loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.vision_vocab_size)
 
@@ -1514,7 +1516,7 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPreTrainedModel, GenerationMixin):
         loss_total = loss
 
         self.forward_step += 1
-        if self.forward_step % 10 == 0:
+        if self.forward_step % 20 == 0:
             if wandb.run is not None and ((not dist.is_initialized()) or dist.get_rank() == 0):
                 if task_type == 'generation':
                     wandb.log({
@@ -1526,7 +1528,7 @@ class Qwen3VLForConditionalGeneration(Qwen3VLPreTrainedModel, GenerationMixin):
                     })
                 elif task_type == 'understanding':
                     wandb.log({'understanding_loss': loss.item()})
-        torch.cuda.empty_cache()
+            torch.cuda.empty_cache()
 
         return Qwen3VLCausalLMOutputWithPast(
             loss=loss_total,
