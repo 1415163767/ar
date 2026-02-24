@@ -76,6 +76,7 @@ torchrun --nnodes=$WORLD_SIZE \
          --node_rank=$NODE_RANK \
          --master_addr=$MASTER_ADDR \
          --master_port=$MASTER_PORT  \
+         --max_restarts=10 \
          ${entry_file} ${args}
 
 
