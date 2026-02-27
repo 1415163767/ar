@@ -27,8 +27,8 @@ datasets=0_30_s_academic_v0_1,0_30_s_youtube_v0_1,0_30_s_activitynetqa,0_30_s_ne
 # datasets=0_30_s_academic_v0_1,0_30_s_youtube_v0_1,0_30_s_activitynetqa,0_30_s_nextqa,0_30_s_perceptiontest
 
 # Output configuration
-run_name="qwen3vl_2b_multiple_ema_codebook_uni_video_pretrain"
-output_dir=/blob/dyb_output/icml2026/qwen3vl_2b_multiple_ema_codebook_uni_video_pretrain
+run_name="qwen3vl_2b_multiple_ema_codebook_uni_video_sft"
+output_dir=/blob/dyb_output/icml2026/qwen3vl_2b_multiple_ema_codebook_uni_video_sft
 export WANDB_PROJECT="icml_ar_ablation"
 
 # Training arguments
