@@ -11,6 +11,7 @@ deepspeed=./scripts/zero2.json
 # Model configuration
 llm=Qwen/Qwen3-VL-2B-Instruct  # Using HuggingFace model ID
 llm=/blob/dyb_output/icml2026/qwen3vl_2b_multiple_ema_codebook_uni_image_pretrain/checkpoint-77891
+llm=/blob/dyb_output/icml2026/qwen3vl_2b_multiple_ema_codebook_uni_video_pretrain/checkpoint-42910
 vq_path=/blob/dyb_output/icml2026/multiple_codebook_ema_scale_image_video/checkpoint-963425/model.safetensors
 
 # Training hyperparameters
@@ -60,9 +61,9 @@ args="
     --save_steps 5000 \
     --save_total_limit 100 \
     --learning_rate ${lr} \
-    --weight_decay 0.01 \
+    --weight_decay 0.0 \
     --max_grad_norm 1 \
-    --lr_scheduler_type "constant" \
+    --lr_scheduler_type "cosine_with_min_lr" \
     --logging_steps 20 \
     --model_max_length 32768 \
     --gradient_checkpointing True \
