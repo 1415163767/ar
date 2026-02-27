@@ -142,7 +142,8 @@ def _build_messages(item: Dict[str, Any]) -> List[Dict[str, Any]]:
     if isinstance(item, dict) and 'video_path' in item:
         video_pool = [{"type": "video", "video": item['video_path'].replace('/mnt/yifanyang/', '/blob/')}]
         # caption = random.choice([item['caption'], item['short_caption']])
-        caption = item['caption']
+        # caption = item['caption']
+        caption = item['short_caption']
         item = {'conversations': [{'from': 'human', 'value': '<video>\nDescribe this video.'}, {'from': 'gpt', 'value': caption}]}
     elif "image" in item:
         video_pool = [{"type": "video", "video": os.path.join("/zehui/laion20M", item['image'])}]
@@ -297,11 +298,11 @@ class LazySupervisedDataset(Dataset):
 
         # Load Video Data
         if data_args.add_video_data:
-            pretrain_data_path = "/blob/dyb/processed_data/koala/video_captions_all.json"
-            print(f"Loading from {pretrain_data_path} ...")
-            with open(pretrain_data_path, 'r', encoding='utf-8') as f:
-                list_data_dict = json.load(f)
-            print(f"[OK] {pretrain_data_path} | entries: {len(list_data_dict)}")
+            # pretrain_data_path = "/blob/dyb/processed_data/koala/video_captions_all.json"
+            # print(f"Loading from {pretrain_data_path} ...")
+            # with open(pretrain_data_path, 'r', encoding='utf-8') as f:
+            #     list_data_dict = json.load(f)
+            # print(f"[OK] {pretrain_data_path} | entries: {len(list_data_dict)}")
             pretrain_data_path = "/blob/dyb/processed_data/IPOW_VIDU/test_videos_dataset.json"
             print(f"Loading from {pretrain_data_path} ...")
             with open(pretrain_data_path, 'r', encoding='utf-8') as f:
