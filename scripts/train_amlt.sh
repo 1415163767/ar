@@ -61,9 +61,9 @@ args="
     --save_steps 5000 \
     --save_total_limit 100 \
     --learning_rate ${lr} \
-    --weight_decay 0.00 \
+    --weight_decay 0.01 \
     --max_grad_norm 1 \
-    --lr_scheduler_type "cosine_with_min_lr" \
+    --lr_scheduler_type "constant" \
     --logging_steps 20 \
     --model_max_length 32768 \
     --gradient_checkpointing True \
