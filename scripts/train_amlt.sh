@@ -61,7 +61,7 @@ args="
     --save_steps 5000 \
     --save_total_limit 100 \
     --learning_rate ${lr} \
-    --weight_decay 0.01 \
+    --weight_decay 0.00 \
     --max_grad_norm 1 \
     --lr_scheduler_type "cosine_with_min_lr" \
     --logging_steps 20 \
